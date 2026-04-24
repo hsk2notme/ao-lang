@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FO4 Champions League - Cúp Tứ Hùng</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.11/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.11/firebase-database-compat.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: { 
+                        cl: { navy: '#001C3D', dark: '#0A2463', gold: '#FFD700', silver: '#C0C0C0', accent: '#FF6B6B' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Roboto:wght@400;500;700;900&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #F4F7FB; color: #1a1a1a; }
+        .glass-panel { background: #FFFFFF; border: 1px solid #E2E8F0; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05); border-radius: 24px; }
+        .c1-header { background: linear-gradient(135deg, #001C3D 0%, #0A2463 100%); border-bottom: 6px solid #FFD700; }
+        input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        .rank-badge { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; font-weight: 700; font-size: 0.85rem; }
+        .rank-top4 { background: #FFD700; color: #001C3D; box-shadow: 0 2px 8px rgba(255, 215, 0, 0.5); }
+        .rank-normal { background: #F1F5F9; color: #64748B; }
+    </style>
+</head>
+<body class="min-h-screen pb-12">
+    
+    <header class="c1-header text-white relative shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 py-8 text-center">
+            <h1 class="text-4xl md:text-5xl font-black uppercase tracking-widest mb-2">
+                <span class="text-[#FFD700]">🏆 UEFA CHAMPIONS LEAGUE</span>
+            </h1>
+            <p class="text-lg text-blue-200 font-medium" id="status-text">Đang tải dữ liệu...</p>
+        </div>
+    </header>
+
+    <div id="admin-toolbar" class="hidden max-w-7xl mx-auto px-4 mt-6">
+        <div class="bg-indigo-50 border-2 border-indigo-100 rounded-2xl p-4 flex flex-wrap gap-4 items-center justify-between">
+            <div class="font-bold text-indigo-800 flex items-center gap-2">⚙️ Bảng Điều Khiển Admin</div>
+            <div class="flex gap-3">
+                <button onclick="backToSetup()" class="bg-white text-indigo-600 border px-4 py-2 rounded-xl font-bold hover:bg-indigo-100 transition text-sm">✏️ Sửa Đội (Làm lại lịch)</button>
+                <button onclick="resetTournament()" class="bg-red-500 text-white px-4 py-2 rounded-xl font-bold hover:bg-red-600 transition text-sm">🗑️ Xóa Sạch Giải</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="setup-section" class="hidden max-w-3xl mx-auto px-4 py-10">
+        <div class="glass-panel p-8">
+            <h2 class="text-2xl font-black text-cl-navy mb-6">🛠 Khởi Tạo Giải Đấu</h2>
+            <div class="flex gap-3 mb-6">
+                <input type="text" id="player-name" placeholder="Nhập tên HLV hoặc Đội bóng..." class="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FFD700] outline-none" onkeypress="if(event.key==='Enter') addPlayer()">
+                <button onclick="addPlayer()" class="bg-cl-navy text-[#FFD700] px-6 py-3 rounded-xl font-bold transition">Thêm Đội</button>
+            </div>
+            <div id="player-list" class="bg-slate-50 border p-4 rounded-xl min-h-[100px] flex flex-wrap gap-3 mb-6"></div>
+            <button onclick="generateSchedule()" class="w-full bg-gradient-to-r from-[#FFD700] to-yellow-500 text-cl-navy px-6 py-4 rounded-xl font-black text-lg shadow-md hidden" id="btn-start">
+                ✓ CHỐT DANH SÁCH & TẠO LỊCH THI ĐẤU
+            </button>
+        </div>
+    </div>
+
+    <div id="dashboard" class="hidden max-w-7xl mx-auto px-4 py-8">
+        
+        <div class="flex gap-4 mb-6 border-b border-gray-200">
+            <button onclick="switchTab('groupStage')" id="tab-group" class="px-6 py-3 font-bold text-lg border-b-4 border-cl-navy text-cl-navy">Vòng Bảng</button>
+            <button onclick="switchTab('playoff')" id="tab-playoff" class="px-6 py-3 font-bold text-lg border-b-4 border-transparent text-gray-400 hover:text-cl-navy" style="display: none;">Vòng Playoff (BO3)</button>
+        </div>
+        
+        <div id="groupStage-tab" class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <div class="lg:col-span-7 glass-panel p-6 border-t-4 border-t-cl-navy h-fit">
+                <h2 class="text-2xl font-black text-cl-navy mb-6">📊 BẢNG XẾP HẠNG</h2>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm table-fixed min-w-[600px]">
+                        <thead>
+                            <tr class="text-gray-500 uppercase text-xs font-bold border-b-2 border-gray-100">
+                                <th class="w-12 pb-3 text-center">#</th><th class="pb-3 pl-2">Đội Bóng</th><th class="w-12 pb-3 text-center">Trận</th><th class="w-20 pb-3 text-center">T-H-B</th><th class="w-20 pb-3 text-center">BT-BB</th><th class="w-16 pb-3 text-center">HS</th><th class="w-16 pb-3 text-center text-cl-navy">Điểm</th>
+                            </tr>
+                        </thead>
+                        <tbody id="standings-body" class="divide-y divide-gray-50"></tbody>
+                    </table>
+                </div>
+                <div id="playoff-button-container" class="mt-6"></div>
+            </div>
+            
+            <div class="lg:col-span-5 glass-panel p-6 border-t-4 border-t-[#FFD700] h-fit">
+                <h2 class="text-2xl font-black text-cl-navy mb-6">⚽ LỊCH THI ĐẤU</h2>
+                <div id="matches-container" class="space-y-6 max-h-[700px] overflow-y-auto pr-2"></div>
+            </div>
+        </div>
+        
+        <div id="playoff-tab" style="display: none;" class="glass-panel p-6 border-t-4 border-t-[#FFD700]">
+            <h2 class="text-2xl font-black text-cl-navy mb-2">🏅 SƠ ĐỒ PLAYOFF NHÁNH THẮNG THUA (BO3)</h2>
+            <p class="text-sm text-gray-500 mb-6 border-b pb-4">Quy tắc: Chạm 2 trận thắng sẽ đi tiếp. Nếu hòa, vui lòng đá Penalty và nhập kết quả cuối cùng (phải có thắng/thua).</p>
+            <div id="playoff-content" class="bg-slate-50 p-6 rounded-2xl border border-slate-200"></div>
+        </div>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyBJQPPdOLYAURUQVi34cOw22OSYSEmqcm8",
+            authDomain: "fo4-noi-bo.firebaseapp.com",
+            databaseURL: "https://fo4-noi-bo-default-rtdb.asia-southeast1.firebasedatabase.app", 
+            projectId: "fo4-noi-bo",
+            storageBucket: "fo4-noi-bo.firebasestorage.app",
+            messagingSenderId: "752853666965",
+            appId: "1:752853666965:web:ce26074a2c51a61e2d9f9c"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        const isAdmin = new URLSearchParams(window.location.search).get('admin') === 'vip';
+        let players = [], matches = [];
+
+        db.ref('fo4_ranking').on('value', (snap) => {
+            const data = snap.val();
+            if (data && data.started) {
+                players = data.players || [];
+                matches = data.matches || [];
+                document.getElementById('setup-section').classList.add('hidden');
+                document.getElementById('dashboard').classList.remove('hidden');
+                if (isAdmin) document.getElementById('admin-toolbar').classList.remove('hidden');
+                
+                renderMatches();
+                calculateStandings();
+                
+                if (data.playoff) {
+                    document.getElementById('status-text').innerText = "🔴 VÒNG PLAYOFF ĐANG DIỄN RA";
+                    document.getElementById('tab-playoff').style.display = 'block';
+                    renderPlayoff(data.playoff);
+                } else {
+                    document.getElementById('status-text').innerText = "🔴 VÒNG BẢNG ĐANG DIỄN RA";
+                }
+            } else {
+                players = data?.players || [];
+                document.getElementById('dashboard').classList.add('hidden');
+                document.getElementById('admin-toolbar').classList.add('hidden');
+                if (isAdmin) {
+                    document.getElementById('setup-section').classList.remove('hidden');
+                    renderPlayerList();
+                    document.getElementById('status-text').innerText = "✏️ Admin: Đang thiết lập danh sách";
+                } else {
+                    document.getElementById('setup-section').classList.add('hidden');
+                    document.getElementById('status-text').innerText = "⏱️ Giải đấu đang được thiết lập...";
+                }
+            }
+        });
+
+        function backToSetup() { if(confirm("Xóa lịch thi đấu để xếp lại?")) db.ref('fo4_ranking').update({ started: false, matches: null, playoff: null }); }
+        function resetTournament() { if(confirm("Xóa SẠCH toàn bộ giải đấu?")) db.ref('fo4_ranking').set(null); }
+        function sync() { if(isAdmin) db.ref('fo4_ranking').update({ started: true, players, matches }); }
+
+        function addPlayer() {
+            const input = document.getElementById('player-name');
+            const name = input.value.trim();
+            if (name && !players.includes(name)) {
+                players.push(name);
+                input.value = '';
+                if(isAdmin) db.ref('fo4_ranking/players').set(players);
+            }
+        }
+
+        function renderPlayerList() {
+            document.getElementById('player-list').innerHTML = players.map((p, i) => `<div class="bg-white border px-4 py-2 rounded-lg font-bold">${i+1}. ${p} <button onclick="deletePlayer(${i})" class="text-red-500 ml-2 font-black">✕</button></div>`).join('');
+            document.getElementById('btn-start').style.display = players.length >= 2 ? 'block' : 'none';
+        }
+        function deletePlayer(index) { players.splice(index, 1); db.ref('fo4_ranking/players').set(players); }
+
+        function generateSchedule() {
+            matches = []; let ps = [...players];
+            if (ps.length % 2 !== 0) ps.push(null);
+            for (let r = 0; r < ps.length - 1; r++) {
+                for (let i = 0; i < ps.length / 2; i++) {
+                    const h = ps[i], a = ps[ps.length - 1 - i];
+                    if (h && a) matches.push({ id: `m_${r}_${i}`, round: r + 1, home: h, away: a, hS: null, aS: null, done: false });
+                }
+                ps.splice(1, 0, ps.pop());
+            }
+            sync();
+        }
+
+        function updateScore(id, side, val) {
+            if(!isAdmin) return;
+            const m = matches.find(x => x.id === id);
+            m[side === 'h' ? 'hS' : 'aS'] = val === '' ? null : parseInt(val);
+            m.done = (m.hS !== null && m.aS !== null);
+            sync();
+        }
+
+        function renderMatches() {
+            const grouped = matches.reduce((acc, m) => { (acc[m.round] = acc[m.round] || []).push(m); return acc; }, {});
+            document.getElementById('matches-container').innerHTML = Object.entries(grouped).map(([r, ms]) => `
+                <div class="mb-5">
+                    <div class="text-sm font-bold text-gray-400 uppercase tracking-widest mb-3 border-b pb-1">Vòng ${r}</div>
+                    <div class="space-y-3">
+                        ${ms.map(m => `
+                        <div class="bg-white border p-3 rounded-xl ${m.done ? 'bg-gray-50 opacity-70' : ''}">
+                            <div class="flex justify-between items-center">
+                                <div class="flex-1 text-right font-bold text-sm pr-2">${m.home}</div>
+                                <div class="flex gap-2">
+                                    <input type="number" ${!isAdmin?'disabled':''} value="${m.hS??''}" onchange="updateScore('${m.id}','h',this.value)" class="w-10 h-10 text-center font-black rounded-lg border outline-none">
+                                    <span class="font-bold self-center">:</span>
+                                    <input type="number" ${!isAdmin?'disabled':''} value="${m.aS??''}" onchange="updateScore('${m.id}','a',this.value)" class="w-10 h-10 text-center font-black rounded-lg border outline-none">
+                                </div>
+                                <div class="flex-1 text-left font-bold text-sm pl-2">${m.away}</div>
+                            </div>
+                        </div>`).join('')}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function calculateStandings() {
+            let s = {};
+            players.forEach(p => s[p] = { name: p, p:0, w:0, d:0, l:0, gf:0, ga:0, gd:0, pts:0 });
+            matches.forEach(m => {
+                if (m.done) {
+                    let h = s[m.home], a = s[m.away];
+                    h.p++; a.p++; h.gf += m.hS; h.ga += m.aS; a.gf += m.aS; a.ga += m.hS;
+                    if (m.hS > m.aS) { h.w++; h.pts += 3; a.l++; } else if (m.hS < m.aS) { a.w++; a.pts += 3; h.l++; } else { h.d++; a.d++; h.pts += 1; a.pts += 1; }
+                }
+            });
+            Object.values(s).forEach(x => x.gd = x.gf - x.ga);
+            
+            const sorted = Object.values(s).sort((a,b) => {
+                if (b.pts !== a.pts) return b.pts - a.pts;
+                if (b.gd !== a.gd) return b.gd - a.gd;
+                const h2h = matches.find(m => m.done && ((m.home === a.name && m.away === b.name) || (m.home === b.name && m.away === a.name)));
+                if (h2h) {
+                    if (h2h.home === a.name && h2h.hS > h2h.aS) return -1;
+                    if (h2h.away === a.name && h2h.aS > h2h.hS) return -1;
+                    if (h2h.home === b.name && h2h.hS > h2h.aS) return 1;
+                    if (h2h.away === b.name && h2h.aS > h2h.hS) return 1;
+                }
+                return b.gf - a.gf;
+            });
+            
+            const allDone = matches.filter(m => !m.done).length === 0 && matches.length > 0;
+            const playoffBtn = document.getElementById('playoff-button-container');
+            if (allDone) {
+                db.ref('fo4_ranking/playoff').once('value', snap => {
+                    if(!snap.exists()) {
+                        playoffBtn.innerHTML = `<div class="bg-blue-50 border border-blue-200 rounded-xl p-5 text-center mt-4"><p class="font-bold text-cl-navy mb-3 text-lg">🎉 VÒNG BẢNG ĐÃ HOÀN TẤT!</p><button onclick="initPlayoffTournament()" class="bg-gradient-to-r from-cl-navy to-cl-dark text-[#FFD700] px-8 py-3 rounded-xl font-black shadow-lg hover:scale-105 transition ${!isAdmin ? 'hidden' : ''}">🏅 CHỐT TOP 4 & BẮT ĐẦU PLAYOFF</button></div>`;
+                    } else { playoffBtn.innerHTML = ''; }
+                });
+            } else { playoffBtn.innerHTML = ''; }
+            
+            document.getElementById('standings-body').innerHTML = sorted.map((x, i) => `
+                <tr class="hover:bg-blue-50 transition border-b border-gray-50">
+                    <td class="py-3 text-center"><span class="rank-badge ${i<4?'rank-top4':'rank-normal'}">${i+1}</span></td>
+                    <td class="py-3 pl-2 font-bold text-gray-800">${x.name}</td>
+                    <td class="py-3 text-center font-medium">${x.p}</td>
+                    <td class="py-3 text-center text-gray-500">${x.w}-${x.d}-${x.l}</td>
+                    <td class="py-3 text-center font-medium">${x.gf} - ${x.ga}</td>
+                    <td class="py-3 text-center font-bold ${x.gd>0?'text-green-500':(x.gd<0?'text-red-400':'')}">${x.gd>0?'+'+x.gd:x.gd}</td>
+                    <td class="py-3 text-center font-black text-lg text-cl-navy">${x.pts}</td>
+                </tr>`).join('');
+            return sorted;
+        }
+
+        // ================= PLAYOFF LOGIC =================
+        function switchTab(tab) {
+            if (tab === 'groupStage') {
+                document.getElementById('groupStage-tab').style.display = 'grid';
+                document.getElementById('playoff-tab').style.display = 'none';
+            } else {
+                document.getElementById('groupStage-tab').style.display = 'none';
+                document.getElementById('playoff-tab').style.display = 'block';
+            }
+            ['groupStage', 'playoff'].forEach(t => {
+                const btn = document.getElementById(`tab-${t}`);
+                if(t === tab) { btn.classList.add('border-cl-navy', 'text-cl-navy'); btn.classList.remove('border-transparent', 'text-gray-400'); }
+                else { btn.classList.remove('border-cl-navy', 'text-cl-navy'); btn.classList.add('border-transparent', 'text-gray-400'); }
+            });
+        }
+        
+        function initPlayoffTournament() {
+            if (!isAdmin) return;
+            const teams = calculateStandings().slice(0, 4);
+            if (teams.length < 4) return alert('Cần đủ 4 đội để chơi Playoff!');
+            const playoff = {
+                m1: { id: 'm1', title: 'M1 - NHÁNH THẮNG', sub: '(Hạng 1 vs Hạng 2) - Thắng vào Chung Kết, Thua xuống M3', p1: teams[0].name, p2: teams[1].name, games: [], winner: null, loser: null },
+                m2: { id: 'm2', title: 'M2 - NHÁNH THUA', sub: '(Hạng 3 vs Hạng 4) - Thắng vào M3, Thua bị loại', p1: teams[2].name, p2: teams[3].name, games: [], winner: null, loser: null },
+                m3: { id: 'm3', title: 'M3 - TRẬN QUYẾT ĐỊNH', sub: '(Thua M1 vs Thắng M2) - Thắng vào Chung Kết', p1: null, p2: null, games: [], winner: null, loser: null },
+                m4: { id: 'm4', title: 'M4 - CHUNG KẾT', sub: '(Thắng M1 vs Thắng M3) - Tranh Vô Địch', p1: null, p2: null, games: [], winner: null, loser: null }
+            };
+            db.ref('fo4_ranking').update({ playoff: playoff }, (err) => { if(!err) switchTab('playoff'); });
+        }
+        
+        function renderPlayoff(playoffData) {
+            const container = document.getElementById('playoff-content');
+            const createCard = (match) => {
+                const games = match.games || [];
+                let w1 = 0, w2 = 0;
+                games.forEach(g => { if(g.p1 > g.p2) w1++; else w2++; });
+                const isDone = w1 === 2 || w2 === 2;
+
+                const gamesHTML = games.map((g, idx) => `<div class="text-sm bg-gray-100 px-3 py-1 rounded flex justify-between w-full font-medium"><span>Game ${idx+1}</span><span class="font-black">${g.p1} - ${g.p2}</span></div>`).join('');
+
+                return `
+                <div class="bg-white border-2 p-6 rounded-2xl relative ${isDone ? 'border-[#FFD700] shadow-md' : 'border-gray-200'}">
+                    ${isDone ? `<div class="absolute -top-3 -right-3 bg-[#FFD700] text-cl-navy font-black text-xs px-3 py-1 rounded-full shadow">HOÀN TẤT</div>` : ''}
+                    <div class="text-center mb-4"><h3 class="font-black text-xl text-cl-navy">${match.title}</h3><p class="text-xs text-gray-500 mt-1">${match.sub}</p></div>
+                    
+                    <div class="flex items-center justify-between bg-gray-50 p-4 rounded-xl border mb-4">
+                        <div class="w-[40%] text-right font-bold text-lg ${w1===2?'text-green-600':(w2===2?'text-gray-300':'')} truncate pr-2">${match.p1 || 'Đang chờ...'}</div>
+                        <div class="w-[20%] text-center bg-white px-2 py-1 rounded-lg border-2 font-black text-2xl text-cl-navy">${w1} - ${w2}</div>
+                        <div class="w-[40%] text-left font-bold text-lg ${w2===2?'text-green-600':(w1===2?'text-gray-300':'')} truncate pl-2">${match.p2 || 'Đang chờ...'}</div>
+                    </div>
+                    ${games.length > 0 ? `<div class="flex flex-col gap-2 mb-4 items-center">${gamesHTML}</div>` : ''}
+                    
+                    ${isAdmin && match.p1 && match.p2 && !isDone ? `
+                        <div class="border-t border-dashed pt-4">
+                            <p class="text-xs font-bold text-gray-400 text-center mb-2 uppercase">Nhập kết quả Game ${games.length + 1}</p>
+                            <div class="flex justify-center gap-3 mb-4">
+                                <input type="number" id="${match.id}_p1" class="w-16 h-12 text-center font-black text-xl border-2 rounded focus:border-[#FFD700] outline-none">
+                                <span class="font-black text-gray-400 self-center">-</span>
+                                <input type="number" id="${match.id}_p2" class="w-16 h-12 text-center font-black text-xl border-2 rounded focus:border-[#FFD700] outline-none">
+                            </div>
+                            <button onclick="addBO3Game('${match.id}')" class="w-full bg-cl-navy text-[#FFD700] font-black py-3 rounded-xl hover:bg-cl-dark transition">LƯU TỈ SỐ GAME ${games.length + 1}</button>
+                        </div>` : ''}
+                    ${isDone ? `<div class="text-center font-black text-green-600 bg-green-50 py-2 rounded-lg mt-4">✨ Đội Thắng: ${match.winner}</div>` : ''}
+                </div>`;
+            };
+
+            container.innerHTML = `
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">${createCard(playoffData.m1)} ${createCard(playoffData.m2)}</div>
+                <div class="flex justify-center mb-10"><div class="w-full md:w-3/5">${createCard(playoffData.m3)}</div></div>
+                <div class="flex justify-center"><div class="w-full md:w-4/5 transform scale-105">${createCard(playoffData.m4)}</div></div>`;
+        }
+
+        function addBO3Game(matchId) {
+            if(!isAdmin) return;
+            const p1Score = parseInt(document.getElementById(matchId+'_p1').value);
+            const p2Score = parseInt(document.getElementById(matchId+'_p2').value);
+            if(isNaN(p1Score) || isNaN(p2Score)) return alert('Vui lòng nhập tỉ số!');
+            if(p1Score === p2Score) return alert('BO3 yêu cầu có thắng thua mỗi Game (Tính cả tỉ số Penalty nếu hòa). KHÔNG được để Hòa!');
+
+            db.ref('fo4_ranking/playoff').once('value', snap => {
+                const playoff = snap.val();
+                const m = playoff[matchId];
+                let games = m.games || []; games.push({ p1: p1Score, p2: p2Score });
+                let w1 = 0, w2 = 0; games.forEach(g => { if(g.p1 > g.p2) w1++; else w2++; });
+                let updates = {}; updates[`fo4_ranking/playoff/${matchId}/games`] = games;
+                
+                if (w1 === 2 || w2 === 2) {
+                    const winner = w1 === 2 ? m.p1 : m.p2, loser = w1 === 2 ? m.p2 : m.p1;
+                    updates[`fo4_ranking/playoff/${matchId}/winner`] = winner;
+                    updates[`fo4_ranking/playoff/${matchId}/loser`] = loser;
+                    
+                    if (matchId === 'm1') { updates['fo4_ranking/playoff/m4/p1'] = winner; updates['fo4_ranking/playoff/m3/p1'] = loser; }
+                    if (matchId === 'm2') { updates['fo4_ranking/playoff/m3/p2'] = winner; }
+                    if (matchId === 'm3') { updates['fo4_ranking/playoff/m4/p2'] = winner; }
+                }
+                db.ref().update(updates, () => renderPlayoff(playoff));
+            });
+        }
+    </script>
+</body>
+</html>
